@@ -17,7 +17,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const config = new ConfigManager();
   log(`Config: ${JSON.stringify(config.get())}`);
 
-  const engine = new SyncEngine(config);
+  const engine = new SyncEngine(config, context);
 
   context.subscriptions.push(channel, config, engine);
 
