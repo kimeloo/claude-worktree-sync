@@ -2,11 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { WorktreeInfo } from './types';
 import { extractBranchPath, getWorktreesDir } from './utils/paths';
+import { log } from './logger';
 
-/**
- * .claude/worktrees/ 디렉토리를 재귀 스캔하여 실제 worktree 목록을 반환합니다.
- * worktree는 .git **파일**(디렉토리 아님)이 존재하는 디렉토리로 식별합니다.
- */
 export async function discoverWorktrees(repoRoot: string): Promise<WorktreeInfo[]> {
   const worktreesDir = getWorktreesDir(repoRoot);
   const results: WorktreeInfo[] = [];
@@ -14,10 +11,13 @@ export async function discoverWorktrees(repoRoot: string): Promise<WorktreeInfo[
   try {
     await fs.promises.access(worktreesDir);
   } catch {
+    log(`[Discovery] worktreesDir not accessible: ${worktreesDir}`);
     return results;
   }
 
+  log(`[Discovery] Scanning: ${worktreesDir}`);
   await scanDir(worktreesDir, worktreesDir, repoRoot, results);
+  log(`[Discovery] Scan complete: found ${results.length} worktree(s)`);
   return results;
 }
 
@@ -30,16 +30,27 @@ async function scanDir(
   let entries: fs.Dirent[];
   try {
     entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    log(`[Discovery] Failed to readdir ${dir}: ${err}`);
     return;
   }
+
+  log(`[Discovery] scanDir: ${dir} — entries: [${entries.map(e => `${e.name}(${e.isDirectory() ? 'dir' : e.isFile() ? 'file' : 'other'})`).join(', ')}]`);
 
   // .git 파일이 있으면 이 디렉토리는 worktree
   const dotGitPath = path.join(dir, '.git');
   try {
     const stat = await fs.promises.stat(dotGitPath);
-    if (stat.isFile()) {
+    const isFile = stat.isFile();
+    const isDir = stat.isDirectory();
+    log(`[Discovery] Found .git at ${dotGitPath} — isFile: ${isFile}, isDir: ${isDir}`);
+
+    if (isFile) {
+      const content = await fs.promises.readFile(dotGitPath, 'utf-8');
+      log(`[Discovery] .git file content: "${content.trim()}"`);
+
       const branchPath = extractBranchPath(dir, worktreesDir);
+      log(`[Discovery] Identified worktree: branchPath="${branchPath}", absolutePath="${dir}"`);
       results.push({
         absolutePath: dir,
         branchPath,
@@ -47,16 +58,19 @@ async function scanDir(
         repoRoot,
         isInWorkspace: false,
       });
-      return; // worktree 내부는 더 탐색하지 않음
+      return;
     }
+    log(`[Discovery] .git is a directory, not a worktree indicator — skipping`);
   } catch {
-    // .git 파일 없음 — 중간 디렉토리이므로 하위 탐색 계속
+    log(`[Discovery] No .git at ${dotGitPath}`);
   }
 
   // 하위 디렉토리 재귀 탐색
   for (const entry of entries) {
     if (entry.isDirectory() && !entry.name.startsWith('.')) {
       await scanDir(path.join(dir, entry.name), worktreesDir, repoRoot, results);
+    } else if (entry.isDirectory() && entry.name.startsWith('.')) {
+      log(`[Discovery] Skipping dot-directory: ${entry.name}`);
     }
   }
 }

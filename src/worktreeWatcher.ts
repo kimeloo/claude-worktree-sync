@@ -5,6 +5,7 @@ import { WorktreeInfo } from './types';
 import { discoverWorktrees } from './worktreeDiscovery';
 import { getWorktreesDir, pathsEqual } from './utils/paths';
 import { debounce } from './utils/debounce';
+import { log } from './logger';
 
 export interface WorktreeChange {
   added: WorktreeInfo[];
@@ -26,20 +27,27 @@ export class WorktreeWatcher implements vscode.Disposable {
     private readonly repoRoot: string,
     private pollingInterval: number,
   ) {
-    this.debouncedReconcile = debounce(() => this.reconcile(), 300);
+    this.debouncedReconcile = debounce(() => {
+      log('[Watcher] Debounced reconcile triggered');
+      this.reconcile();
+    }, 300);
   }
 
   async start(): Promise<void> {
-    // 초기 스캔
+    log(`[Watcher] start() — repoRoot: ${this.repoRoot}`);
     this.previousWorktrees = await discoverWorktrees(this.repoRoot);
+    log(`[Watcher] Initial scan found ${this.previousWorktrees.length} worktree(s)`);
 
     const worktreesDir = getWorktreesDir(this.repoRoot);
+    log(`[Watcher] worktreesDir: ${worktreesDir}`);
+    log(`[Watcher] worktreesDir exists: ${fs.existsSync(worktreesDir)}`);
+
     this.tryStartFsWatch(worktreesDir);
     this.startPolling();
   }
 
-  /** 설정 변경 시 polling 간격 업데이트 */
   updatePollingInterval(interval: number): void {
+    log(`[Watcher] updatePollingInterval: ${interval}ms`);
     this.pollingInterval = interval;
     if (this.pollingTimer) {
       clearInterval(this.pollingTimer);
@@ -47,73 +55,86 @@ export class WorktreeWatcher implements vscode.Disposable {
     }
   }
 
-  /** 현재 감지된 worktree 목록 반환 */
   getWorktrees(): WorktreeInfo[] {
     return [...this.previousWorktrees];
   }
 
-  /** 수동 새로고침 */
   async refresh(): Promise<WorktreeChange> {
+    log('[Watcher] Manual refresh');
     return this.reconcile();
   }
 
   private tryStartFsWatch(worktreesDir: string): void {
     try {
-      // worktreesDir이 존재하면 직접 감시
       if (fs.existsSync(worktreesDir)) {
+        log('[Watcher] worktreesDir exists, watching directly');
         this.watchWorktreesDir(worktreesDir);
       } else {
-        // .claude/ 또는 repo root를 감시하여 worktrees/ 생성 감지
+        log('[Watcher] worktreesDir does NOT exist, watching for creation');
         this.watchForWorktreesDirCreation();
       }
-    } catch {
-      // fs.watch 실패 시 polling만 사용
+    } catch (err) {
+      log(`[Watcher] tryStartFsWatch FAILED: ${err}`);
     }
   }
 
   private watchWorktreesDir(worktreesDir: string): void {
     this.cleanupFsWatcher();
     try {
-      this.fsWatcher = fs.watch(worktreesDir, { recursive: true }, () => {
+      this.fsWatcher = fs.watch(worktreesDir, { recursive: true }, (eventType, filename) => {
+        log(`[Watcher] fs.watch event: type=${eventType}, file=${filename}`);
         this.debouncedReconcile();
       });
-      this.fsWatcher.on('error', () => {
+      this.fsWatcher.on('error', (err) => {
+        log(`[Watcher] fs.watch ERROR: ${err}`);
         this.cleanupFsWatcher();
-        // polling이 fallback으로 동작
       });
-    } catch {
-      // recursive watch 미지원 시 polling만 사용
+      log(`[Watcher] fs.watch started on ${worktreesDir} (recursive)`);
+    } catch (err) {
+      log(`[Watcher] fs.watch FAILED to start: ${err}`);
     }
   }
 
   private watchForWorktreesDirCreation(): void {
     const claudeDir = path.join(this.repoRoot, '.claude');
     const worktreesDir = getWorktreesDir(this.repoRoot);
+    const claudeDirExists = fs.existsSync(claudeDir);
 
-    const watchTarget = fs.existsSync(claudeDir) ? claudeDir : this.repoRoot;
+    const watchTarget = claudeDirExists ? claudeDir : this.repoRoot;
+    log(`[Watcher] Watching parent for worktrees/ creation: ${watchTarget} (claudeDir exists: ${claudeDirExists})`);
 
     try {
-      this.parentWatcher = fs.watch(watchTarget, (_, filename) => {
-        if (!filename) { return; }
+      this.parentWatcher = fs.watch(watchTarget, (eventType, filename) => {
+        log(`[Watcher] Parent watch event: type=${eventType}, file=${filename}, target=${watchTarget}`);
+        if (!filename) {
+          log('[Watcher] Parent watch: filename is null, ignoring');
+          return;
+        }
         const relevant =
           (watchTarget === claudeDir && filename === 'worktrees') ||
           (watchTarget === this.repoRoot && filename === '.claude');
 
+        log(`[Watcher] Parent watch: relevant=${relevant}, worktreesDir exists=${fs.existsSync(worktreesDir)}`);
+
         if (relevant && fs.existsSync(worktreesDir)) {
+          log('[Watcher] worktrees/ directory appeared! Switching to direct watch');
           this.cleanupParentWatcher();
           this.watchWorktreesDir(worktreesDir);
           this.debouncedReconcile();
         }
       });
-      this.parentWatcher.on('error', () => {
+      this.parentWatcher.on('error', (err) => {
+        log(`[Watcher] Parent watch ERROR: ${err}`);
         this.cleanupParentWatcher();
       });
-    } catch {
-      // 실패 시 polling만 사용
+      log(`[Watcher] Parent watcher started on ${watchTarget}`);
+    } catch (err) {
+      log(`[Watcher] Parent watch FAILED to start: ${err}`);
     }
   }
 
   private startPolling(): void {
+    log(`[Watcher] Polling started (interval: ${this.pollingInterval}ms)`);
     this.pollingTimer = setInterval(() => {
       if (!this.disposed) {
         this.debouncedReconcile();
@@ -123,23 +144,44 @@ export class WorktreeWatcher implements vscode.Disposable {
 
   private async reconcile(): Promise<WorktreeChange> {
     if (this.disposed) {
+      log('[Watcher] reconcile() skipped — disposed');
       return { added: [], removed: [] };
     }
 
+    log(`[Watcher] reconcile() — scanning ${this.repoRoot}`);
     const current = await discoverWorktrees(this.repoRoot);
+    log(`[Watcher] reconcile() — found ${current.length} worktree(s), previous had ${this.previousWorktrees.length}`);
+
+    if (current.length > 0) {
+      log(`[Watcher] Current worktrees: ${JSON.stringify(current.map(w => w.branchPath))}`);
+    }
+    if (this.previousWorktrees.length > 0) {
+      log(`[Watcher] Previous worktrees: ${JSON.stringify(this.previousWorktrees.map(w => w.branchPath))}`);
+    }
+
     const change = diffWorktrees(this.previousWorktrees, current);
     this.previousWorktrees = current;
+
+    log(`[Watcher] Diff result: +${change.added.length} added, -${change.removed.length} removed`);
+    if (change.added.length > 0) {
+      log(`[Watcher] Added: ${JSON.stringify(change.added.map(w => w.branchPath))}`);
+    }
+    if (change.removed.length > 0) {
+      log(`[Watcher] Removed: ${JSON.stringify(change.removed.map(w => w.branchPath))}`);
+    }
 
     // worktreesDir이 새로 생겼을 수 있으므로 watcher 확인
     if (!this.fsWatcher) {
       const worktreesDir = getWorktreesDir(this.repoRoot);
       if (fs.existsSync(worktreesDir)) {
+        log('[Watcher] reconcile: worktreesDir appeared, starting direct watch');
         this.cleanupParentWatcher();
         this.watchWorktreesDir(worktreesDir);
       }
     }
 
     if (change.added.length > 0 || change.removed.length > 0) {
+      log('[Watcher] Firing onDidChange event');
       this._onDidChange.fire(change);
     }
 
@@ -147,16 +189,23 @@ export class WorktreeWatcher implements vscode.Disposable {
   }
 
   private cleanupFsWatcher(): void {
+    if (this.fsWatcher) {
+      log('[Watcher] Cleaning up fs.watch');
+    }
     this.fsWatcher?.close();
     this.fsWatcher = undefined;
   }
 
   private cleanupParentWatcher(): void {
+    if (this.parentWatcher) {
+      log('[Watcher] Cleaning up parent watcher');
+    }
     this.parentWatcher?.close();
     this.parentWatcher = undefined;
   }
 
   dispose(): void {
+    log('[Watcher] dispose()');
     this.disposed = true;
     this.cleanupFsWatcher();
     this.cleanupParentWatcher();
