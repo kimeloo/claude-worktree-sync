@@ -130,7 +130,7 @@ export class SyncEngine implements vscode.Disposable {
     return this.watchers.flatMap((w) => w.getWorktrees());
   }
 
-  /** .claude 디렉토리가 존재하는 workspace folder의 경로를 반환 (worktree 폴더 자체는 제외) */
+  /** .claude 디렉토리 또는 .git 디렉토리가 존재하는 workspace folder의 경로를 반환 (worktree 폴더 자체는 제외) */
   private findRepoRoots(): string[] {
     const folders = vscode.workspace.workspaceFolders ?? [];
     log(`[SyncEngine] findRepoRoots — checking ${folders.length} workspace folder(s)`);
@@ -138,16 +138,28 @@ export class SyncEngine implements vscode.Disposable {
 
     for (const folder of folders) {
       const fsPath = folder.uri.fsPath;
-      const claudeDir = path.join(fsPath, '.claude');
-      const exists = fs.existsSync(claudeDir);
-
-      // worktree 폴더 자체를 repo root로 오인하지 않도록 필터링
-      // worktree 경로에는 .claude/worktrees/ 세그먼트가 포함됨
       const normalized = fsPath.replace(/\\/g, '/');
-      const isWorktreeFolder = /\/\.claude\/worktrees\//.test(normalized);
 
-      log(`[SyncEngine]   folder "${folder.name}" (${fsPath}) → .claude exists: ${exists}, isWorktreeFolder: ${isWorktreeFolder}`);
-      if (exists && !isWorktreeFolder) {
+      // Claude Code worktree 폴더 자체를 repo root로 오인하지 않도록 필터링
+      const isClaudeWorktreeFolder = /\/\.claude\/worktrees\//.test(normalized);
+      if (isClaudeWorktreeFolder) {
+        log(`[SyncEngine]   folder "${folder.name}" (${fsPath}) — skipped (Claude worktree folder)`);
+        continue;
+      }
+
+      const claudeDir = path.join(fsPath, '.claude');
+      const hasClaudeDir = fs.existsSync(claudeDir);
+
+      // .git 디렉토리(main repo)인지 확인 — .git 파일이면 linked worktree이므로 제외
+      const gitPath = path.join(fsPath, '.git');
+      let isMainGitRepo = false;
+      try {
+        const stat = fs.statSync(gitPath);
+        isMainGitRepo = stat.isDirectory();
+      } catch { /* .git 없음 */ }
+
+      log(`[SyncEngine]   folder "${folder.name}" (${fsPath}) → .claude: ${hasClaudeDir}, .git dir: ${isMainGitRepo}`);
+      if (hasClaudeDir || isMainGitRepo) {
         roots.push(fsPath);
       }
     }
