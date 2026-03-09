@@ -12,7 +12,7 @@
 - [x] 진입점 (extension.ts)
 
 ## Post-MVP
-- [ ] Explorer TreeView: 사이드바에 Claude Worktrees 패널
+- [x] Explorer TreeView: 사이드바에 Claude Worktrees 패널
 - [ ] 커맨드 확장: 수동 추가/제거, 터미널 열기, diff 보기
 - [ ] Claude Code 훅 연동: WorktreeCreate/WorktreeRemove 이벤트 IPC 수신
 - [ ] 다중 저장소 지원 강화: multi-root workspace에서 여러 repo 독립 감시
