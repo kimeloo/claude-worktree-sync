@@ -41,6 +41,14 @@
         }
       }
     },
+    "views": {
+      "explorer": [
+        {
+          "id": "claudeWorktrees",
+          "name": "Claude Worktrees"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "claudeWorktreeSync.refreshWorktrees",

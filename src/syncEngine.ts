@@ -7,13 +7,15 @@ import { addToWorkspace, removeFromWorkspace, isInWorkspace } from './workspaceS
 import { StatusBar } from './statusBar';
 import { WorktreeInfo } from './types';
 import { log } from './logger';
+import { WorktreeTreeDataProvider } from './treeView';
 
 export class SyncEngine implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly watchers: WorktreeWatcher[] = [];
   private readonly statusBar = new StatusBar();
+  private readonly treeDataProvider = new WorktreeTreeDataProvider();
 
-  constructor(private readonly config: ConfigManager) {
+  constructor(private readonly config: ConfigManager, private readonly context: vscode.ExtensionContext) {
     this.disposables.push(this.statusBar);
   }
 
@@ -35,6 +37,11 @@ export class SyncEngine implements vscode.Disposable {
         }
       }),
     );
+
+    const treeView = vscode.window.createTreeView('claudeWorktrees', {
+      treeDataProvider: this.treeDataProvider,
+    });
+    this.disposables.push(treeView);
 
     this.disposables.push(
       vscode.commands.registerCommand('claudeWorktreeSync.refreshWorktrees', () => {
@@ -116,6 +123,7 @@ export class SyncEngine implements vscode.Disposable {
 
     log(`[SyncEngine] StatusBar update: ${allWorktrees.length} total, ${allWorktrees.filter(w => w.isInWorkspace).length} in workspace`);
     this.statusBar.update(allWorktrees);
+    this.treeDataProvider.refresh(allWorktrees);
   }
 
   private getAllWorktrees(): WorktreeInfo[] {
