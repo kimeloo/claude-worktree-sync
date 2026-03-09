@@ -16,7 +16,8 @@
     "Other"
   ],
   "activationEvents": [
-    "workspaceContains:.claude"
+    "workspaceContains:.claude",
+    "workspaceContains:.git"
   ],
   "main": "./out/extension.js",
   "contributes": {

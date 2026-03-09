@@ -17,6 +17,7 @@ export class WorktreeWatcher implements vscode.Disposable {
   readonly onDidChange = this._onDidChange.event;
 
   private fsWatcher: fs.FSWatcher | undefined;
+  private gitWatcher: fs.FSWatcher | undefined;
   private pollingTimer: ReturnType<typeof setInterval> | undefined;
   private parentWatcher: fs.FSWatcher | undefined;
   private previousWorktrees: WorktreeInfo[] = [];
@@ -43,6 +44,7 @@ export class WorktreeWatcher implements vscode.Disposable {
     log(`[Watcher] worktreesDir exists: ${fs.existsSync(worktreesDir)}`);
 
     this.tryStartFsWatch(worktreesDir);
+    this.tryStartGitWatch();
     this.startPolling();
   }
 
@@ -62,6 +64,28 @@ export class WorktreeWatcher implements vscode.Disposable {
   async refresh(): Promise<WorktreeChange> {
     log('[Watcher] Manual refresh');
     return this.reconcile();
+  }
+
+  private tryStartGitWatch(): void {
+    const gitWorktreesDir = path.join(this.repoRoot, '.git', 'worktrees');
+    if (!fs.existsSync(gitWorktreesDir)) {
+      log('[Watcher] .git/worktrees/ not found, skipping git watch');
+      return;
+    }
+    try {
+      this.gitWatcher = fs.watch(gitWorktreesDir, { recursive: true }, (eventType, filename) => {
+        log(`[Watcher] git worktrees watch event: type=${eventType}, file=${filename}`);
+        this.debouncedReconcile();
+      });
+      this.gitWatcher.on('error', (err) => {
+        log(`[Watcher] git watch ERROR: ${err}`);
+        this.gitWatcher?.close();
+        this.gitWatcher = undefined;
+      });
+      log(`[Watcher] fs.watch started on ${gitWorktreesDir} (git worktrees)`);
+    } catch (err) {
+      log(`[Watcher] git watch FAILED to start: ${err}`);
+    }
   }
 
   private tryStartFsWatch(worktreesDir: string): void {
@@ -209,6 +233,8 @@ export class WorktreeWatcher implements vscode.Disposable {
     this.disposed = true;
     this.cleanupFsWatcher();
     this.cleanupParentWatcher();
+    this.gitWatcher?.close();
+    this.gitWatcher = undefined;
     if (this.pollingTimer) {
       clearInterval(this.pollingTimer);
     }
