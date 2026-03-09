@@ -1,0 +1,62 @@
+{
+  "name": "claude-worktree-sync",
+  "displayName": "Claude Worktree Sync",
+  "description": "Automatically detect and sync Claude Code worktrees to your VSCode workspace",
+  "version": "0.1.0",
+  "publisher": "kimeloo",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kimeloo/claude-worktree-sync.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.claude"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Claude Worktree Sync",
+      "properties": {
+        "claudeWorktreeSync.autoAdd": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically add detected worktrees to workspace"
+        },
+        "claudeWorktreeSync.autoRemove": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically remove deleted worktrees from workspace"
+        },
+        "claudeWorktreeSync.pollingInterval": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "description": "Polling interval in milliseconds (fallback for fs.watch)"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "claudeWorktreeSync.refreshWorktrees",
+        "title": "Claude Worktree Sync: Refresh Worktrees"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
