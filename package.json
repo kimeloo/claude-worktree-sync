@@ -52,9 +52,19 @@
     "commands": [
       {
         "command": "claudeWorktreeSync.refreshWorktrees",
-        "title": "Claude Worktree Sync: Refresh Worktrees"
+        "title": "Claude Worktree Sync: Refresh Worktrees",
+        "icon": "$(refresh)"
       }
-    ]
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeWorktreeSync.refreshWorktrees",
+          "when": "view == claudeWorktrees",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "compile": "tsc -p ./",
