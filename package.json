@@ -52,16 +52,68 @@
     "commands": [
       {
         "command": "claudeWorktreeSync.refreshWorktrees",
-        "title": "Claude Worktree Sync: Refresh Worktrees",
+        "title": "Refresh Worktrees",
+        "category": "Claude Worktree Sync",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeWorktreeSync.addWorktreeToWorkspace",
+        "title": "Add Worktree to Workspace",
+        "category": "Claude Worktree Sync",
+        "icon": "$(add)"
+      },
+      {
+        "command": "claudeWorktreeSync.removeWorktreeFromWorkspace",
+        "title": "Remove Worktree from Workspace",
+        "category": "Claude Worktree Sync",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "claudeWorktreeSync.openTerminal",
+        "title": "Open Terminal",
+        "category": "Claude Worktree Sync",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "claudeWorktreeSync.viewDiff",
+        "title": "View Diff",
+        "category": "Claude Worktree Sync",
+        "icon": "$(diff)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "claudeWorktreeSync.addWorktreeToWorkspace",
+          "when": "view == claudeWorktrees",
+          "group": "navigation"
+        },
+        {
           "command": "claudeWorktreeSync.refreshWorktrees",
           "when": "view == claudeWorktrees",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "claudeWorktreeSync.addWorktreeToWorkspace",
+          "when": "view == claudeWorktrees && viewItem == worktreeNotInWorkspace",
+          "group": "1_sync"
+        },
+        {
+          "command": "claudeWorktreeSync.removeWorktreeFromWorkspace",
+          "when": "view == claudeWorktrees && viewItem == worktreeInWorkspace",
+          "group": "1_sync"
+        },
+        {
+          "command": "claudeWorktreeSync.openTerminal",
+          "when": "view == claudeWorktrees",
+          "group": "2_actions"
+        },
+        {
+          "command": "claudeWorktreeSync.viewDiff",
+          "when": "view == claudeWorktrees",
+          "group": "2_actions"
         }
       ]
     }

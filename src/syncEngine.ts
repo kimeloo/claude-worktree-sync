@@ -7,7 +7,7 @@ import { addToWorkspace, removeFromWorkspace, isInWorkspace } from './workspaceS
 import { StatusBar } from './statusBar';
 import { WorktreeInfo } from './types';
 import { log } from './logger';
-import { WorktreeTreeDataProvider } from './treeView';
+import { WorktreeItem, WorktreeTreeDataProvider } from './treeView';
 
 export class SyncEngine implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -47,6 +47,68 @@ export class SyncEngine implements vscode.Disposable {
       vscode.commands.registerCommand('claudeWorktreeSync.refreshWorktrees', () => {
         log('[SyncEngine] refreshWorktrees command invoked');
         this.refreshAll();
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.addWorktreeToWorkspace', async (item?: WorktreeItem) => {
+        log('[SyncEngine] addWorktreeToWorkspace command invoked');
+        if (item) {
+          addToWorkspace(item.worktree);
+          this.updateStatusBar();
+          return;
+        }
+        const notInWorkspace = this.getAllWorktrees().filter(wt => !wt.isInWorkspace);
+        if (notInWorkspace.length === 0) {
+          vscode.window.showInformationMessage('All worktrees are already in the workspace.');
+          return;
+        }
+        const picked = await vscode.window.showQuickPick(
+          notInWorkspace.map(wt => ({ label: wt.branchPath, description: wt.absolutePath, worktree: wt })),
+          { placeHolder: 'Select a worktree to add to workspace' },
+        );
+        if (picked) {
+          addToWorkspace(picked.worktree);
+          this.updateStatusBar();
+        }
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.removeWorktreeFromWorkspace', (item?: WorktreeItem) => {
+        log('[SyncEngine] removeWorktreeFromWorkspace command invoked');
+        if (item) {
+          removeFromWorkspace(item.worktree.absolutePath);
+          this.updateStatusBar();
+          return;
+        }
+        const inWorkspace = this.getAllWorktrees().filter(wt => wt.isInWorkspace);
+        if (inWorkspace.length === 0) {
+          vscode.window.showInformationMessage('No worktrees are currently in the workspace.');
+          return;
+        }
+        vscode.window.showQuickPick(
+          inWorkspace.map(wt => ({ label: wt.branchPath, description: wt.absolutePath, worktree: wt })),
+          { placeHolder: 'Select a worktree to remove from workspace' },
+        ).then(picked => {
+          if (picked) {
+            removeFromWorkspace(picked.worktree.absolutePath);
+            this.updateStatusBar();
+          }
+        });
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.openTerminal', (item?: WorktreeItem) => {
+        log('[SyncEngine] openTerminal command invoked');
+        if (!item) { return; }
+        const terminal = vscode.window.createTerminal({
+          name: `[WT] ${item.worktree.branchPath}`,
+          cwd: item.worktree.absolutePath,
+        });
+        terminal.show();
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.viewDiff', (item?: WorktreeItem) => {
+        log('[SyncEngine] viewDiff command invoked');
+        if (!item) { return; }
+        const terminal = vscode.window.createTerminal({
+          name: `diff: ${item.worktree.branchPath}`,
+          cwd: item.worktree.absolutePath,
+        });
+        terminal.show();
+        terminal.sendText('git diff');
       }),
     );
 
