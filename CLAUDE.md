@@ -117,6 +117,7 @@ type: short description in English
 - 본문은 한국어로 작성, 필요 시만 추가
 
 **커밋 규칙:**
+- 변경사항은 적절한 작업 단위로 나누어 커밋 (파일 종류·목적별 분리)
 - `Co-Authored-By:` 트레일러 절대 추가 금지
 - 사용자 확인 없이 커밋 실행 금지 (`/commit` 스킬 사용 시)
 - `--no-verify` 사용 금지
