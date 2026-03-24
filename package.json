@@ -2,7 +2,7 @@
   "name": "claude-worktree-sync",
   "displayName": "Claude Worktree Sync",
   "description": "Automatically detect and sync Claude Code worktrees to your VSCode workspace",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "kimeloo",
   "license": "MIT",
   "repository": {

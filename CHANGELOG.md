@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-24
+
 ### Added
 - Explorer TreeView 패널 (`Claude Worktrees`) 추가
 - TreeView 툴바에 새로고침 버튼 추가
