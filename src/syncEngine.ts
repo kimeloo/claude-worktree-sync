@@ -7,7 +7,7 @@ import { addToWorkspace, removeFromWorkspace, isInWorkspace } from './workspaceS
 import { StatusBar } from './statusBar';
 import { WorktreeInfo } from './types';
 import { log } from './logger';
-import { WorktreeTreeDataProvider } from './treeView';
+import { WorktreeItem, WorktreeTreeDataProvider } from './treeView';
 
 export class SyncEngine implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
@@ -47,6 +47,68 @@ export class SyncEngine implements vscode.Disposable {
       vscode.commands.registerCommand('claudeWorktreeSync.refreshWorktrees', () => {
         log('[SyncEngine] refreshWorktrees command invoked');
         this.refreshAll();
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.addWorktreeToWorkspace', async (item?: WorktreeItem) => {
+        log('[SyncEngine] addWorktreeToWorkspace command invoked');
+        if (item) {
+          addToWorkspace(item.worktree);
+          this.updateStatusBar();
+          return;
+        }
+        const notInWorkspace = this.getAllWorktrees().filter(wt => !wt.isInWorkspace);
+        if (notInWorkspace.length === 0) {
+          vscode.window.showInformationMessage('All worktrees are already in the workspace.');
+          return;
+        }
+        const picked = await vscode.window.showQuickPick(
+          notInWorkspace.map(wt => ({ label: wt.branchPath, description: wt.absolutePath, worktree: wt })),
+          { placeHolder: 'Select a worktree to add to workspace' },
+        );
+        if (picked) {
+          addToWorkspace(picked.worktree);
+          this.updateStatusBar();
+        }
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.removeWorktreeFromWorkspace', (item?: WorktreeItem) => {
+        log('[SyncEngine] removeWorktreeFromWorkspace command invoked');
+        if (item) {
+          removeFromWorkspace(item.worktree.absolutePath);
+          this.updateStatusBar();
+          return;
+        }
+        const inWorkspace = this.getAllWorktrees().filter(wt => wt.isInWorkspace);
+        if (inWorkspace.length === 0) {
+          vscode.window.showInformationMessage('No worktrees are currently in the workspace.');
+          return;
+        }
+        vscode.window.showQuickPick(
+          inWorkspace.map(wt => ({ label: wt.branchPath, description: wt.absolutePath, worktree: wt })),
+          { placeHolder: 'Select a worktree to remove from workspace' },
+        ).then(picked => {
+          if (picked) {
+            removeFromWorkspace(picked.worktree.absolutePath);
+            this.updateStatusBar();
+          }
+        });
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.openTerminal', (item?: WorktreeItem) => {
+        log('[SyncEngine] openTerminal command invoked');
+        if (!item) { return; }
+        const terminal = vscode.window.createTerminal({
+          name: `[WT] ${item.worktree.branchPath}`,
+          cwd: item.worktree.absolutePath,
+        });
+        terminal.show();
+      }),
+      vscode.commands.registerCommand('claudeWorktreeSync.viewDiff', (item?: WorktreeItem) => {
+        log('[SyncEngine] viewDiff command invoked');
+        if (!item) { return; }
+        const terminal = vscode.window.createTerminal({
+          name: `diff: ${item.worktree.branchPath}`,
+          cwd: item.worktree.absolutePath,
+        });
+        terminal.show();
+        terminal.sendText('git diff');
       }),
     );
 
@@ -130,7 +192,7 @@ export class SyncEngine implements vscode.Disposable {
     return this.watchers.flatMap((w) => w.getWorktrees());
   }
 
-  /** .claude 디렉토리가 존재하는 workspace folder의 경로를 반환 (worktree 폴더 자체는 제외) */
+  /** .claude 디렉토리 또는 .git 디렉토리가 존재하는 workspace folder의 경로를 반환 (worktree 폴더 자체는 제외) */
   private findRepoRoots(): string[] {
     const folders = vscode.workspace.workspaceFolders ?? [];
     log(`[SyncEngine] findRepoRoots — checking ${folders.length} workspace folder(s)`);
@@ -138,16 +200,28 @@ export class SyncEngine implements vscode.Disposable {
 
     for (const folder of folders) {
       const fsPath = folder.uri.fsPath;
-      const claudeDir = path.join(fsPath, '.claude');
-      const exists = fs.existsSync(claudeDir);
-
-      // worktree 폴더 자체를 repo root로 오인하지 않도록 필터링
-      // worktree 경로에는 .claude/worktrees/ 세그먼트가 포함됨
       const normalized = fsPath.replace(/\\/g, '/');
-      const isWorktreeFolder = /\/\.claude\/worktrees\//.test(normalized);
 
-      log(`[SyncEngine]   folder "${folder.name}" (${fsPath}) → .claude exists: ${exists}, isWorktreeFolder: ${isWorktreeFolder}`);
-      if (exists && !isWorktreeFolder) {
+      // Claude Code worktree 폴더 자체를 repo root로 오인하지 않도록 필터링
+      const isClaudeWorktreeFolder = /\/\.claude\/worktrees\//.test(normalized);
+      if (isClaudeWorktreeFolder) {
+        log(`[SyncEngine]   folder "${folder.name}" (${fsPath}) — skipped (Claude worktree folder)`);
+        continue;
+      }
+
+      const claudeDir = path.join(fsPath, '.claude');
+      const hasClaudeDir = fs.existsSync(claudeDir);
+
+      // .git 디렉토리(main repo)인지 확인 — .git 파일이면 linked worktree이므로 제외
+      const gitPath = path.join(fsPath, '.git');
+      let isMainGitRepo = false;
+      try {
+        const stat = fs.statSync(gitPath);
+        isMainGitRepo = stat.isDirectory();
+      } catch { /* .git 없음 */ }
+
+      log(`[SyncEngine]   folder "${folder.name}" (${fsPath}) → .claude: ${hasClaudeDir}, .git dir: ${isMainGitRepo}`);
+      if (hasClaudeDir || isMainGitRepo) {
         roots.push(fsPath);
       }
     }

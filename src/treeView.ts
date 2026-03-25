@@ -11,7 +11,7 @@ export class WorktreeItem extends vscode.TreeItem {
   }
 }
 
-export class WorktreeTreeDataProvider implements vscode.TreeDataProvider<WorktreeItem> {
+export class WorktreeTreeDataProvider implements vscode.TreeDataProvider<WorktreeItem>, vscode.Disposable {
   private _onDidChangeTreeData = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   private worktrees: WorktreeInfo[] = [];
@@ -21,8 +21,12 @@ export class WorktreeTreeDataProvider implements vscode.TreeDataProvider<Worktre
     this._onDidChangeTreeData.fire();
   }
 
+  dispose(): void {
+    this._onDidChangeTreeData.dispose();
+  }
+
   getTreeItem(element: WorktreeItem): vscode.TreeItem { return element; }
-  getChildren(): WorktreeItem[] {
+  getChildren(_element?: WorktreeItem): WorktreeItem[] {
     return this.worktrees.map(wt => new WorktreeItem(wt));
   }
 }

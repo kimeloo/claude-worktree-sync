@@ -1,10 +1,29 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { WorktreeInfo } from './types';
-import { extractBranchPath, getWorktreesDir } from './utils/paths';
+import { extractBranchPath, getWorktreesDir, normalizePath, pathsEqual } from './utils/paths';
 import { log } from './logger';
 
+const execAsync = promisify(exec);
+
 export async function discoverWorktrees(repoRoot: string): Promise<WorktreeInfo[]> {
+  const [claudeWorktrees, gitWorktrees] = await Promise.all([
+    discoverClaudeWorktrees(repoRoot),
+    discoverGitWorktrees(repoRoot),
+  ]);
+
+  // Deduplicate: prefer claude worktrees if same path
+  const seen = new Set<string>(claudeWorktrees.map(w => normalizePath(w.absolutePath)));
+  const uniqueGitWorktrees = gitWorktrees.filter(w => !seen.has(normalizePath(w.absolutePath)));
+
+  const results = [...claudeWorktrees, ...uniqueGitWorktrees];
+  log(`[Discovery] Total worktrees: ${results.length} (claude: ${claudeWorktrees.length}, git: ${uniqueGitWorktrees.length})`);
+  return results;
+}
+
+async function discoverClaudeWorktrees(repoRoot: string): Promise<WorktreeInfo[]> {
   const worktreesDir = getWorktreesDir(repoRoot);
   const results: WorktreeInfo[] = [];
 
@@ -17,7 +36,56 @@ export async function discoverWorktrees(repoRoot: string): Promise<WorktreeInfo[
 
   log(`[Discovery] Scanning: ${worktreesDir}`);
   await scanDir(worktreesDir, worktreesDir, repoRoot, results);
-  log(`[Discovery] Scan complete: found ${results.length} worktree(s)`);
+  log(`[Discovery] Claude scan complete: found ${results.length} worktree(s)`);
+  return results;
+}
+
+export async function discoverGitWorktrees(repoRoot: string): Promise<WorktreeInfo[]> {
+  try {
+    const { stdout } = await execAsync('git worktree list --porcelain', { cwd: repoRoot });
+    const results = parseGitWorktreeList(stdout, repoRoot);
+    log(`[Discovery] Git worktrees found: ${results.length}`);
+    return results;
+  } catch (err) {
+    log(`[Discovery] git worktree list failed: ${err}`);
+    return [];
+  }
+}
+
+function parseGitWorktreeList(output: string, repoRoot: string): WorktreeInfo[] {
+  const results: WorktreeInfo[] = [];
+  const blocks = output.trim().split(/\n\n+/);
+
+  for (const block of blocks) {
+    const lines = block.trim().split('\n');
+    const worktreeLine = lines.find(l => l.startsWith('worktree '));
+    const branchLine = lines.find(l => l.startsWith('branch '));
+
+    if (!worktreeLine) { continue; }
+
+    const worktreePath = worktreeLine.slice('worktree '.length).trim();
+
+    // Skip the main worktree (same as repoRoot)
+    if (pathsEqual(worktreePath, repoRoot)) { continue; }
+
+    let branchPath = path.basename(worktreePath);
+    if (branchLine) {
+      // "branch refs/heads/feat/my-feature" → "feat/my-feature"
+      const ref = branchLine.slice('branch '.length).trim();
+      const headsPrefix = 'refs/heads/';
+      branchPath = ref.startsWith(headsPrefix) ? ref.slice(headsPrefix.length) : ref;
+    }
+
+    log(`[Discovery] Git worktree found: path="${worktreePath}", branch="${branchPath}"`);
+    results.push({
+      absolutePath: worktreePath,
+      branchPath,
+      displayName: `[WT] ${branchPath}`,
+      repoRoot,
+      isInWorkspace: false,
+    });
+  }
+
   return results;
 }
 

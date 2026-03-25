@@ -2,7 +2,12 @@
 .vscode-test/**
 src/**
 node_modules/**
+.claude/**
+.github/**
+logs/**
 .gitignore
 tsconfig.json
+CLAUDE.md
+plan.md
 **/*.ts
 **/*.map
